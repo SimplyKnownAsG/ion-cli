@@ -18,7 +18,7 @@
         };
 
         ion-cli = pkgs.rustPlatform.buildRustPackage {
-          pname = "ion";
+          pname = "ion-cli";
           version = "0.4.2";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
