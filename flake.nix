@@ -27,6 +27,7 @@
       in
       {
         packages.default = ion-cli;
+        packages.ion-cli = ion-cli;
 
         devShells.default = pkgs.mkShell {
           buildInputs = ion-cli.buildInputs;
