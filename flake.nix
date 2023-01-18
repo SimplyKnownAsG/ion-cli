@@ -22,7 +22,7 @@
           version = "0.6.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
-          doCheck = false;
+          doCheck = true;
         };
       in
       {
