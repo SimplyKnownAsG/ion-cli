@@ -3,7 +3,7 @@
 
   inputs = {
     nixpkgs = {
-      url = "github:nixos/nixpkgs/nixos-23.05";
+      url = "github:nixos/nixpkgs/nixos-24.05";
     };
     flake-utils = {
       url = "github:numtide/flake-utils";
@@ -19,7 +19,7 @@
 
         ion-cli = pkgs.rustPlatform.buildRustPackage {
           pname = "ion-cli";
-          version = "0.4.2";
+          version = "0.6.1";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           doCheck = true;
