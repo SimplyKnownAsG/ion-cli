@@ -1,6 +1,6 @@
 [package]
 name = "ion-cli"
-version = "0.4.2"
+version = "0.6.1"
 authors = ["The Ion Team <ion-team@amazon.com>"]
 edition = "2021"
 description = "Command line tool for working with the Ion data format."
@@ -15,17 +15,32 @@ keywords = ["format", "parse", "encode"]
 anyhow = "1.0"
 clap = { version = "4.0.17", features = ["cargo"] }
 colored = "2.0.0"
-ion-rs = "0.18.1"
-memmap = "0.7.0"
+flate2 = "1.0"
+infer = "0.15.0"
+ion-rs = { version = "1.0.0-rc.6", features = ["experimental"] }
 tempfile = "3.2.0"
-ion-schema = "0.7.0"
-serde_json = { version = "1.0.81", features = [ "arbitrary_precision", "preserve_order" ] }
+ion-schema = "0.10.0"
+serde = { version = "1.0.163", features = ["derive"] }
+serde_json = { version = "1.0.81", features = ["arbitrary_precision", "preserve_order"] }
 base64 = "0.21.1"
+tera = { version = "1.18.1", optional = true }
+convert_case = { version = "0.6.0", optional = true }
+matches = "0.1.10"
+thiserror = "1.0.50"
+zstd = "0.13.0"
+termcolor = "1.4.1"
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+pager = "0.16.1"
 
 [dev-dependencies]
 rstest = "~0.17.0"
 assert_cmd = "~1.0.5"
 tempfile = "~3.5.0"
+
+[features]
+default = []
+experimental-code-gen = ["dep:tera", "dep:convert_case"]
 
 [[bin]]
 name = "ion"

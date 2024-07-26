@@ -1,0 +1,9 @@
+// nested struct with empty string, list and zeros
+{
+ C: {
+    D: false,
+    E: [],
+ },
+ A: "",
+ B: 0,
+}

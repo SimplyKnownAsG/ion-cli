@@ -34,6 +34,12 @@ jobs:
         with:
           command: test
           args: --verbose --workspace
+      - name: Cargo Test - Code generation tests
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --verbose --workspace --features experimental-code-gen
       - name: Rustfmt Check
         uses: actions-rs/cargo@v1
         with:

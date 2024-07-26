@@ -1,11 +1,11 @@
-use crate::commands::{IonCliCommand, WithIonCliArgument};
-use anyhow::{bail, Context, Result};
+use std::io::Write;
+
+use anyhow::{bail, Result};
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use ion_rs::binary::non_blocking::raw_binary_reader::RawBinaryReader;
-use ion_rs::{IonReader, IonResult, IonType, SystemReader, SystemStreamItem};
-use memmap::MmapOptions;
-use std::fs::File;
-use std::io::{stdout, BufWriter, Write};
+use ion_rs::*;
+
+use crate::commands::{CommandIo, IonCliCommand, WithIonCliArgument};
+use crate::output::CommandOutput;
 
 pub struct SymtabFilterCommand;
 
@@ -15,8 +15,7 @@ impl IonCliCommand for SymtabFilterCommand {
     }
 
     fn about(&self) -> &'static str {
-        // XXX Currently only supports binary input
-        "Filters user data out of a binary Ion stream, leaving only the symbol table(s) behind."
+        "Filters user data out of an Ion stream, leaving only the symbol table(s) behind."
     }
 
     fn configure_args(&self, command: Command) -> Command {
@@ -32,70 +31,53 @@ impl IonCliCommand for SymtabFilterCommand {
     }
 
     fn run(&self, _command_path: &mut Vec<String>, args: &ArgMatches) -> Result<()> {
-        let mut output: Box<dyn Write> = if let Some(output_file) = args.get_one::<String>("output")
-        {
-            let file = File::create(output_file).with_context(|| {
-                format!(
-                    "could not open file output file '{}' for writing",
-                    output_file
-                )
-            })?;
-            Box::new(BufWriter::new(file))
-        } else {
-            Box::new(stdout().lock())
-        };
-
         let lift_requested = args.get_flag("lift");
-
-        if let Some(input_file_names) = args.get_many::<String>("input") {
-            // Input files were specified, run the converter on each of them in turn
-            for input_file in input_file_names {
-                let file = File::open(input_file.as_str())
-                    .with_context(|| format!("Could not open file '{}'", &input_file))?;
-
-                let mmap = unsafe {
-                    MmapOptions::new()
-                        .map(&file)
-                        .with_context(|| format!("Could not mmap '{}'", input_file))?
-                };
-
-                // Treat the mmap as a byte array.
-                let ion_data: &[u8] = &mmap[..];
-                let raw_reader = RawBinaryReader::new(ion_data);
-                let mut system_reader = SystemReader::new(raw_reader);
-                omit_user_data(ion_data, &mut system_reader, &mut output, lift_requested)?;
-            }
-        } else {
-            bail!("this command does not yet support reading from STDIN")
-        }
-
-        output.flush()?;
-        Ok(())
+        CommandIo::new(args).for_each_input(|output, input| {
+            let mut system_reader = SystemReader::new(AnyEncoding, input.into_source());
+            filter_out_user_data(&mut system_reader, output, lift_requested)
+        })
     }
 }
 
-pub fn omit_user_data(
-    ion_data: &[u8],
-    reader: &mut SystemReader<RawBinaryReader<&[u8]>>,
-    output: &mut Box<dyn Write>,
+pub fn filter_out_user_data(
+    reader: &mut SystemReader<AnyEncoding, impl IonInput>,
+    output: &mut CommandOutput,
     lift_requested: bool,
-) -> IonResult<()> {
+) -> Result<()> {
     loop {
-        match reader.next()? {
-            SystemStreamItem::VersionMarker(major, minor) => {
-                output.write_all(&[0xE0, major, minor, 0xEA])?;
+        match reader.next_item()? {
+            SystemStreamItem::VersionMarker(marker) => {
+                output.write_all(marker.span().bytes())?;
             }
-            SystemStreamItem::SymbolTableValue(IonType::Struct) => {
-                if !lift_requested {
-                    output.write_all(reader.raw_annotations_bytes().unwrap_or(&[]))?;
+            SystemStreamItem::SymbolTable(symtab) => {
+                let Some(raw_value) = symtab.as_value().raw() else {
+                    // This symbol table came from a macro expansion; there are no encoded bytes
+                    // to pass through.
+                    bail!("found an ephemeral symbol table, which is not yet supported")
+                };
+                if lift_requested {
+                    // Only pass through the value portion of the symbol table, stripping off the
+                    // `$ion_symbol_table` annotation.
+                    output.write_all(raw_value.value_span().bytes())?;
+                } else {
+                    // Pass through the complete symbol table, preserving the `$ion_symbol_table`
+                    // annotation.
+                    output.write_all(raw_value.span().bytes())?;
                 }
-                output.write_all(reader.raw_header_bytes().unwrap())?;
-                let body_range = reader.value_range();
-                let body_bytes = &ion_data[body_range];
-                output.write_all(body_bytes)?;
             }
-            SystemStreamItem::Nothing => return Ok(()),
-            _ => {}
+            SystemStreamItem::Value(_) => continue,
+            SystemStreamItem::EndOfStream(_) => {
+                return Ok(());
+            }
+            _ => unreachable!("#[non_exhaustive] enum, current variants covered"),
+        };
+        // If this is a text encoding, then we need delimiting space to separate
+        // IVMs from their neighboring system stream items. Consider:
+        //     $ion_1_0$ion_1_0
+        // or
+        //     $ion_symbol_table::{}$ion_1_0$ion_symbol_table::{}
+        if reader.detected_encoding().is_text() {
+            output.write_all(&[b'\n']).unwrap()
         }
     }
 }

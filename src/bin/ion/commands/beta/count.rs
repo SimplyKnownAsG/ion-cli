@@ -1,9 +1,8 @@
-use crate::commands::{IonCliCommand, WithIonCliArgument};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{ArgMatches, Command};
 use ion_rs::*;
-use std::fs::File;
-use std::io::{stdin, BufReader, StdinLock};
+
+use crate::commands::{CommandIo, IonCliCommand, WithIonCliArgument};
 
 pub struct CountCommand;
 
@@ -21,33 +20,16 @@ impl IonCliCommand for CountCommand {
     }
 
     fn run(&self, _command_path: &mut Vec<String>, args: &ArgMatches) -> Result<()> {
-        if let Some(input_file_iter) = args.get_many::<String>("input") {
-            for input_file in input_file_iter {
-                let file = File::open(input_file)
-                    .with_context(|| format!("Could not open file '{}'", input_file))?;
-                let mut reader = ReaderBuilder::new().build(file)?;
-                print_top_level_value_count(&mut reader)?;
-            }
-        } else {
-            let input: StdinLock = stdin().lock();
-            let buf_reader = BufReader::new(input);
-            let mut reader = ReaderBuilder::new().build(buf_reader)?;
-            print_top_level_value_count(&mut reader)?;
-        };
-
-        Ok(())
+        CommandIo::new(args).for_each_input(|_output, input| {
+            let mut reader = Reader::new(AnyEncoding, input.into_source())?;
+            print_top_level_value_count(&mut reader)
+        })
     }
 }
 
-fn print_top_level_value_count(reader: &mut Reader) -> Result<()> {
+fn print_top_level_value_count<I: IonInput>(reader: &mut Reader<AnyEncoding, I>) -> Result<()> {
     let mut count: usize = 0;
-    loop {
-        let item = reader
-            .next()
-            .with_context(|| "could not count values in Ion stream")?;
-        if item == StreamItem::Nothing {
-            break;
-        }
+    while let Some(_) = reader.next()? {
         count += 1;
     }
     println!("{}", count);
