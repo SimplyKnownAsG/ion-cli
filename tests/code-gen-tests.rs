@@ -1,11 +1,15 @@
-#![cfg(feature = "experimental-code-gen")]
-
 use anyhow::Result;
 use assert_cmd::Command;
 use rstest::rstest;
 use std::fs::File;
 use std::io::Write;
+use std::path::PathBuf;
 use tempfile::TempDir;
+
+/// Returns a new [PathBuf] instance with the absolute path of the "code-gen-projects" directory.
+fn code_gen_projects_path() -> PathBuf {
+    PathBuf::from_iter([env!("CARGO_MANIFEST_DIR"), "code-gen-projects"])
+}
 
 #[test]
 fn roundtrip_tests_for_generated_code_gradle() -> Result<()> {
@@ -16,20 +20,26 @@ fn roundtrip_tests_for_generated_code_gradle() -> Result<()> {
 
     // absolute paths for gradle project and executables
     let ion_executable = env!("CARGO_BIN_EXE_ion");
-    let test_crate_path = format!(
-        "{}/code-gen-projects/java/code-gen-demo",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    let gradle_executable = format!("{}/gradlew", test_crate_path);
+    let ion_input = code_gen_projects_path().join("input");
+    let test_project_path = code_gen_projects_path().join("java").join("code-gen-demo");
+
+    let gradle_executable_name = if cfg!(windows) {
+        "gradlew.bat"
+    } else {
+        "gradlew"
+    };
+
+    let gradle_executable = test_project_path.join(gradle_executable_name);
 
     // Clean and Test
     let gradle_output = std::process::Command::new(gradle_executable)
-        .current_dir(&test_crate_path)
+        .current_dir(test_project_path)
         .env("ION_CLI", ion_executable)
+        .env("ION_INPUT", ion_input)
         .arg("clean")
         .arg("test")
         .output()
-        .expect("failed to execute './gradlew clean test'");
+        .expect("failed to execute Gradle targets 'clean' and 'test'");
 
     println!("status: {}", gradle_output.status);
     std::io::stdout().write_all(&gradle_output.stdout).unwrap();
@@ -48,15 +58,12 @@ fn roundtrip_tests_for_generated_code_cargo() -> Result<()> {
 
     // absolute paths for crate and executables
     let ion_executable = env!("CARGO_BIN_EXE_ion");
-    let test_crate_path = format!(
-        "{}/code-gen-projects/rust/code-gen-demo",
-        env!("CARGO_MANIFEST_DIR")
-    );
+    let test_project_path = code_gen_projects_path().join("rust").join("code-gen-demo");
     let cargo_executable = env!("CARGO");
 
     // Clean
     let cargo_clean_output = std::process::Command::new(cargo_executable)
-        .current_dir(&test_crate_path)
+        .current_dir(&test_project_path)
         .arg("clean")
         .output()
         .expect("failed to execute 'cargo clean'");
@@ -71,7 +78,7 @@ fn roundtrip_tests_for_generated_code_cargo() -> Result<()> {
 
     // Test
     let cargo_test_output = std::process::Command::new(cargo_executable)
-        .current_dir(&test_crate_path)
+        .current_dir(&test_project_path)
         .arg("test")
         .env("ION_CLI", ion_executable)
         .output()
@@ -89,7 +96,8 @@ fn roundtrip_tests_for_generated_code_cargo() -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "experimental-code-gen")]
+//TODO: Add cargo roundtrip tests once the rust templates are modified based on new code generation model
+
 #[rstest]
 #[case::any_element_list(
 r#"
@@ -116,16 +124,16 @@ r#"
         }
     "#
 )]
-/// Calls ion-cli beta generate with different unsupported schema types. Verify that `generate` subcommand returns an error for these schema types.
+/// Calls ion-cli generate with different unsupported schema types. Verify that `generate` subcommand returns an error for these schema types.
 fn test_unsupported_schema_types_failures(#[case] test_schema: &str) -> Result<()> {
     let mut cmd = Command::cargo_bin("ion")?;
     let temp_dir = TempDir::new()?;
     let input_schema_path = temp_dir.path().join("test_schema.isl");
-    let mut input_schema_file = File::create(&input_schema_path)?;
-    input_schema_file.write(test_schema.as_bytes())?;
+    let mut input_schema_file = File::create(input_schema_path)?;
+    input_schema_file.write_all(test_schema.as_bytes())?;
     input_schema_file.flush()?;
     cmd.args([
-        "beta",
+        "-X",
         "generate",
         "--schema",
         "test_schema.isl",
