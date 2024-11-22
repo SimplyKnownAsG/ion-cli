@@ -21,7 +21,11 @@
           name = "ion-cli";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
-          doCheck = false;
+          doCheck = true;
+          nativeBuildInputs = [
+            pkgs.jdk17
+            pkgs.gradle
+          ];
         };
       in
       {
