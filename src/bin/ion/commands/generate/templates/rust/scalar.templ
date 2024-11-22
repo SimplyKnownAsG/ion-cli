@@ -1,0 +1,48 @@
+{% import "nested_type.templ"  as macros %}
+
+{# Verify that the abstract data type is a scalar type and store information for this scalar value #}
+{% set scalar_info = model.code_gen_type["WrappedScalar"] %}
+{% set base_type = scalar_info["base_type"] | fully_qualified_type_name %}
+
+use {{ model.name | snake }}::{{ model.name }};
+pub mod  {{ model.name | snake }} {
+    use super::*;
+
+    #[derive(Debug, Clone, Default)]
+    pub struct {{ model.name }} {
+        value: {{ base_type }},
+    }
+
+    impl {{ model.name }} {
+        pub fn new(value: {{ base_type }}) -> Self {
+            Self {
+                value,
+            }
+        }
+
+
+        pub fn value(&self) -> &{{ base_type }} {
+            &self.value
+        }
+
+
+        pub fn read_from(reader: &mut Reader) -> SerdeResult<Self> {
+            let mut abstract_data_type = {{ model.name }}::default();
+            abstract_data_type.value = {% if base_type | is_built_in_type == false %}
+                                            {{ base_type }}::read_from(reader)?;
+                                        {% else %}
+                                            reader.read_{% if field.source is defined and field.source == "symbol" %}symbol()?.text().unwrap(){% else %}{{ base_type | lower | replace(from="string", to ="str") }}()?{% endif %}{% if base_type| lower == "string" %} .to_string() {% endif %};
+                                        {% endif %}
+            Ok(abstract_data_type)
+        }
+
+        pub fn write_to<W: IonWriter>(&self, writer: &mut W) -> SerdeResult<()> {
+            {% if base_type | is_built_in_type == false  %}
+                self.value.write_to(writer)?;
+            {% else %}
+                writer.write_{% if field.source is defined and field.source == "symbol" %}symbol{% else %}{{ base_type | lower }}{% endif %}(self.value.to_owned())?;
+            {% endif %}
+            Ok(())
+        }
+    }
+}

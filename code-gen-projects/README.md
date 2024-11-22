@@ -9,8 +9,12 @@ how to use `ion-cli` code generator under the `generate` subcommand with an exis
 * [/schema](#schema)
 * [/java](#java)
     * [Gradle build process](#gradle-build-process)
+    * [Tests](#tests)
+    * [How to run the tests?](#how-to-run-the-tests)
 * [/rust](#rust)
     * [Cargo build process](#cargo-build-process)
+    * [Tests](#tests-1)
+    * [How to run the tests?](#how-to-run-the-tests-1)
 
 ## /input
 
@@ -60,7 +64,7 @@ tasks {
 
         commandLine(ionCli)
             .args(
-                "beta", "generate",
+                "-X", "generate",
                 "-l", "java",
                 "-n", "NAMESPACE_FOR_GENERATED_CODE",
                 "-d", ionSchemaSourceCodeDir,
@@ -78,6 +82,44 @@ tasks {
     }
 }
 ```
+
+### Tests
+
+The tests for the generated code are defined in `CodeGenTests.java`. It has the following tests:
+
+- Tests for getter and setters of the generated code
+- Roundtrip test for bad input Ion files which should result in Exception while reading.
+- Roundtrip test for good input Ion files. Roundtrip has following steps:
+    - Roundtrip test first read an Ion file into the generated model using `readFrom` API of the model
+    - Then writes that model using `writeTo` API of the model.
+    - Compares the written Ion data and original input Ion data.
+
+### How to run the tests?
+
+Here are the steps to follow for running tests:
+
+1. Install ion-cli with either `brew install ion-cli` or `cargo install ion-cli`.
+    1. If you installed with brew then your executable is there in `ion` and you don't need to set up `ION_CLI`
+       environment variable.
+    2. If you installed with `cargo` then your executable would be in `$HOME/.cargo/bin` and you need to setup the
+       environment variable `ION_CLI` to point to the executable's path. If you need latest commits from cargo which are
+       not released yet, then do `cargo install ion-cli --git https://github.com/amazon-ion/ion-cli.git` or
+       `brew install ion-cli --HEAD`.
+2. All the tests uses an environment variable `ION_INPUT` which has the path to input Ion files. So if you want to
+   test out this project locally set the environment variable `ION_INPUT` to point to `code-gen-projects/input.`_
+3. `cd code-gen-projects/java/code-gen-demo`
+4. Finally, to run the tests, just do:
+
+```bash
+ION_INPUT=../../input ./gradlew test
+```
+
+_Note: If you have used `cargo` and have to setup `ION_CLI` then
+use `ION_CLI=$HOME/.cargo/bin/ion ION_INPUT=../../input ./gradlew test`._
+
+At any point if gradle complains about error to write to the output directory then it might be because there is already
+generated code in that directory(i.e. `code-gen-projects/java/code-gen-demo/build/generated/java/*`). So removing that
+directory and then trying out (i.e. remove `generated/java` directory) should make it work.
 
 ## /rust
 
@@ -109,7 +151,7 @@ fn main() {
     let ion_cli = env::var("ION_CLI").unwrap_or("ion".to_string());
     println!("cargo:warn=Running command: {}", ion_cli);
     let mut cmd = std::process::Command::new(ion_cli);
-    cmd.arg("beta")
+    cmd.arg("-X")
         .arg("generate")
         .arg("-l")
         .arg("rust")
@@ -132,3 +174,33 @@ fn main() {
     println!("cargo:rerun-if-changed=schema/");
 }
 ```
+
+### Tests
+
+The tests for the generated code are defined in `tests` module in `lib.rs`. It has the following tests:
+
+- Roundtrip test for bad input Ion files which should result in Exception while reading.
+- Roundtrip test for good input Ion files. Roundtrip has following steps:
+    - Roundtrip test first read an Ion file into the generated model using `readFrom` API of the model
+    - Then writes that model using `writeTo` API of the model.
+    - Compares the written Ion data and original input Ion data.
+
+### How to run the tests?
+
+Here are the steps to follow for running tests:
+
+1. Install ion-cli with either `brew install ion-cli` or `cargo install ion-cli`.
+    1. If you installed with brew then your executable is there in `ion` and you need to setup the
+       environment variable `ION_CLI` to point to the executable's path.
+    2. If you installed with `cargo` then your executable would be in `$HOME/.cargo/bin` and you need to setup the
+       environment variable `ION_CLI` to point to the executable's path. If you need latest commits from cargo which are
+       not released yet, then do `cargo install ion-cli --git https://github.com/amazon-ion/ion-cli.git`.
+2. `cd code-gen-projects/rust/code-gen-demo`
+3. Finally, to run the tests, just do:
+
+```bash
+cargo test
+```
+
+_Note: If you have used `cargo` and have to setup `ION_CLI` then
+use `ION_CLI=$HOME/.cargo/bin/ion cargo test`._

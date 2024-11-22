@@ -12,11 +12,11 @@ fn main() {
     let ion_cli = env::var("ION_CLI").unwrap_or("ion".to_string());
     println!("cargo:warn=Running command: {}", ion_cli);
     let mut cmd = std::process::Command::new(ion_cli);
-    cmd.arg("beta")
+    cmd.arg("-X")
         .arg("generate")
         .arg("-l")
         .arg("rust")
-        .arg("-d")
+        .arg("-A")
         .arg(format!("{}/../../schema", crate_dir))
         .arg("-o")
         .arg(&out_dir);

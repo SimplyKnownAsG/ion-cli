@@ -41,10 +41,10 @@ tasks {
 
         commandLine(ionCli)
             .args(
-                "beta", "generate",
+                "-X", "generate",
                 "-l", "java",
                 "-n", "org.example",
-                "-d", ionSchemaSourceCodeDir,
+                "-A", ionSchemaSourceCodeDir,
                 "-o", generatedIonSchemaModelDir,
             )
             .workingDir(rootProject.projectDir)

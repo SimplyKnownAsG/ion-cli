@@ -1,5 +1,9 @@
 # `ion-cli`
 
+[![Crate](https://img.shields.io/crates/v/ion-cli.svg)](https://crates.io/crates/ion-cli)
+[![License](https://img.shields.io/hexpm/l/plug.svg)](https://github.com/amazon-ion/ion-cli/blob/main/LICENSE)
+[![CI Build](https://github.com/amazon-ion/ion-cli/workflows/CI%20Build/badge.svg)](https://github.com/amazon-ion/ion-cli/actions?query=workflow%3A%22CI+Build%22)
+
 This repository is home to the `ion` command line tool, which provides subcommands
 for working with [the Ion data format](https://amzn.github.io/ion-docs/docs/spec.html).
 
@@ -8,7 +12,9 @@ for working with [the Ion data format](https://amzn.github.io/ion-docs/docs/spec
 * [Examples](#examples)
     * [Viewing the contents of an Ion file](#viewing-the-contents-of-an-ion-file)
     * [Converting between Ion formats](#converting-between-ion-formats)
-    * [Converting between Ion and other formats with `to` and `from`](#converting-between-ion-and-other-formats-with-to-and-from)
+    * [Converting between Ion and other formats with `to` and
+      `from`](#converting-between-ion-and-other-formats-with-to-and-from)
+    * [Ion code generation](#ion-code-generation)
     * [Analyzing binary Ion file encodings with `inspect`](#analyzing-binary-ion-file-encodings-with-inspect)
 * [Installation](#installation)
     * [via `brew`](#via-brew)
@@ -63,20 +69,26 @@ ion cat --format text my_binary_file.ion -o my_text_file.ion
 
 ### Converting between Ion and other formats with `to` and `from`
 
-The `beta to` and `beta from` commands can convert Ion to and from other formats.
+The `to` and `from` commands can convert Ion to and from other formats.
 Currently, JSON is supported.
 
 Convert Ion to JSON:
 
 ```shell
-ion beta to json my_file.10n
+ion to -X json my_file.10n
 ```
 
 Convert JSON to Ion:
 
 ```shell
-ion beta from json my_file.json
+ion from -X json my_file.json
 ```
+
+### Ion Code generation
+
+Code generation is supported with `generate` subcommand on the CLI.
+For more information on how to use code generator,
+see [Ion code generator user guide](https://github.com/amazon-ion/ion-cli/tree/main/src/bin/ion/commands/generate/README.md).
 
 ### Analyzing binary Ion file encodings with `inspect`
 
@@ -126,24 +138,24 @@ ion inspect --skip-bytes 30 --limit-bytes 2 my_file.10n
 
 ### Schema subcommands
 
-All the subcommand to load or validate schema are under the `beta schema` subcommand.
+All the subcommand to load or validate schema are under the `schema` subcommand.
 
 To load a schema:
 
 ```bash
-ion beta schema load --directory <DIRECTORY> --schema <SCHEMA_FILE> 
+ion schema -X load --directory <DIRECTORY> --schema <SCHEMA_FILE> 
 ```
 
 To validate an ion value against a schema type:
 
 ```bash
-ion beta schema validate --directory <DIRECTORY> --schema <SCHEMA_FILE> --input <INPUT_FILE> --type <TYPE>
+ion schema -X validate --directory <DIRECTORY> --schema <SCHEMA_FILE> --input <INPUT_FILE> --type <TYPE>
 ```
 
 For more information on how to use the schema subcommands using CLI, run the following command:
 
 ```bash
-ion beta schema help  
+ion schema help  
 ```
 
 ## Installation
@@ -159,6 +171,11 @@ brew tap amazon-ion/ion-cli
 brew install ion-cli
 ```
 
+To install the (potentially unstable) latest changes from the tip of `main` rather than the latest release, use:
+```bash
+brew install ion-cli --HEAD
+```
+
 ### via `cargo`
 
 The `ion-cli` can also be installed by using Rust's package manager, `cargo`.
@@ -169,35 +186,6 @@ To install `ion-cli`, run the following command:
 
 ```shell
 cargo install ion-cli
-```
-
-Then make sure that `~/.cargo/bin` is on your `$PATH`. You can confirm that it
-has been installed successfully by running:
-
-```shell
-ion help
-```
-
-You should see output that resembles the following:
-
-```
-A collection of tools for working with Ion data.
-
-Usage: ion [OPTIONS] <COMMAND>
-
-Commands:
-  beta     The 'beta' command is a namespace for commands whose interfaces are not yet stable.
-  cat      Prints all Ion input files to the specified output in the requested format.
-  head     Prints the specified number of top-level values in the input stream.
-  inspect  Displays hex-encoded binary Ion alongside its equivalent text Ion.
-               Its output prioritizes human readability and is likely to change
-               between versions. Stable output for programmatic use cases is a
-               non-goal.
-  help     Print this message or the help of the given subcommand(s)
-
-Options:
-  -h, --help                Print help
-  -V, --version             Print version
 ```
 
 ## Build instructions
