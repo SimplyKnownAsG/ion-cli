@@ -6,6 +6,7 @@ use ion_rs::ion_hash::IonHasher;
 use ion_rs::*;
 use sha2::{Sha256, Sha512};
 use sha3::{Sha3_256, Sha3_512};
+use std::fmt;
 use std::io::Write;
 
 // Macro to eliminate repetitive code for each hash algorithm.
@@ -88,7 +89,7 @@ impl IonCliCommand for HashCommand {
     }
 
     fn run(&self, _command_path: &mut Vec<String>, args: &ArgMatches) -> Result<()> {
-        CommandIo::new(args).for_each_input(|output, input| {
+        CommandIo::new(args)?.for_each_input(|output, input| {
             let mut reader = Reader::new(AnyEncoding, input.into_source())?;
 
             let hasher = if let Some(hasher) = args.get_one::<DigestType>("hash") {
@@ -109,8 +110,14 @@ impl IonCliCommand for HashCommand {
                 for elem in reader.elements() {
                     let elem = elem?;
                     let digest = hasher.hash_it(&elem)?;
-                    let digest_string: String =
-                        digest.iter().map(|b| format!("{:02x?}", b)).collect();
+                    let digest_string = digest.iter().fold(
+                        String::with_capacity(digest.len() * 2),
+                        |mut string, byte| {
+                            use fmt::Write;
+                            write!(&mut string, "{:02x}", byte).expect("infallible");
+                            string
+                        },
+                    );
                     output.write_all(digest_string.as_bytes())?;
                     output.write_all("\n".as_bytes())?;
                 }

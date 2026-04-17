@@ -39,7 +39,7 @@ pub(crate) struct CodeGenerator<'a, L: Language> {
 
 impl<'a> CodeGenerator<'a, RustLanguage> {
     #[allow(dead_code)]
-    pub fn new(output: &'a Path) -> CodeGenerator<RustLanguage> {
+    pub fn new(output: &'a Path) -> CodeGenerator<'a, RustLanguage> {
         let mut tera = Tera::default();
         // Add all templates using `rust_templates` module constants
         // This allows packaging binary without the need of template resources.
@@ -105,7 +105,7 @@ impl<'a> CodeGenerator<'a, JavaLanguage> {
     }
 }
 
-impl<'a, L: Language + 'static> CodeGenerator<'a, L> {
+impl<L: Language + 'static> CodeGenerator<'_, L> {
     /// A [tera] filter that converts given tera string value to [upper camel case].
     /// Returns error if the given value is not a string.
     ///

@@ -22,7 +22,7 @@ impl IonCliCommand for ToJsonCommand {
     }
 
     fn is_stable(&self) -> bool {
-        false
+        true
     }
 
     fn is_porcelain(&self) -> bool {
@@ -36,7 +36,7 @@ impl IonCliCommand for ToJsonCommand {
     }
 
     fn run(&self, _command_path: &mut Vec<String>, args: &ArgMatches) -> Result<()> {
-        CommandIo::new(args).for_each_input(|output, input| {
+        CommandIo::new(args)?.for_each_input(|output, input| {
             let input_name = input.name().to_owned();
             let mut reader = Reader::new(AnyEncoding, input.into_source())
                 .with_context(|| format!("Input file '{}' was not valid Ion.", input_name))?;
@@ -83,7 +83,7 @@ fn to_json_value(value: LazyValue<AnyEncoding>) -> Result<JsonValue> {
                     .with_context(|| format!("{d} could not be turned into a Number"))?,
             )
         }
-        Timestamp(t) => JsonValue::String(t.to_string()),
+        Timestamp(t) => JsonValue::String(t.to_string()), // Note: normalizes 'Z' to '+00:00' format
         Symbol(s) => s
             .text()
             .map(|text| JsonValue::String(text.to_owned()))

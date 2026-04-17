@@ -40,7 +40,7 @@ impl IonCliCommand for SymtabFilterCommand {
 
     fn run(&self, _command_path: &mut Vec<String>, args: &ArgMatches) -> Result<()> {
         let lift_requested = args.get_flag("lift");
-        CommandIo::new(args).for_each_input(|output, input| {
+        CommandIo::new(args)?.for_each_input(|output, input| {
             let mut system_reader = SystemReader::new(AnyEncoding, input.into_source());
             filter_out_user_data(&mut system_reader, output, lift_requested)
         })
@@ -85,7 +85,7 @@ pub fn filter_out_user_data(
         // or
         //     $ion_symbol_table::{}$ion_1_0$ion_symbol_table::{}
         if reader.detected_encoding().is_text() {
-            output.write_all(&[b'\n']).unwrap()
+            output.write_all(b"\n").unwrap()
         }
     }
 }

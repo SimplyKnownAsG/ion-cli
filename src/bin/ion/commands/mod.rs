@@ -1,11 +1,14 @@
 use crate::file_writer::FileWriter;
 use crate::input::CommandInput;
-use crate::output::CommandOutput;
-use anyhow::Context;
+use crate::output::{CommandOutput, CommandOutputSpec, HighlightedStreamWriter};
 use anyhow::Result;
+use anyhow::{bail, Context};
 use clap::builder::ValueParser;
 use clap::{crate_authors, crate_version, Arg, ArgAction, ArgMatches, Command as ClapCommand};
+use ion_rs::Format::Binary;
+use ion_rs::{Format, IonEncoding, TextFormat};
 use std::fs::File;
+use std::io::IsTerminal;
 use std::io::Write;
 use termcolor::{ColorChoice, StandardStream, StandardStreamLock};
 
@@ -17,10 +20,13 @@ pub mod generate;
 pub mod hash;
 pub mod head;
 pub mod inspect;
+pub mod jq;
 pub mod primitive;
 pub mod schema;
 pub mod stats;
+pub mod structural_recursion;
 pub mod symtab;
+pub mod timestamp_conversion;
 pub mod to;
 
 pub(crate) use command_namespace::IonCliNamespace;
@@ -132,6 +138,7 @@ pub trait WithIonCliArgument {
     fn with_input(self) -> Self;
     fn with_output(self) -> Self;
     fn with_format(self) -> Self;
+    fn with_color(self) -> Self;
     fn with_ion_version(self) -> Self;
     fn with_decompression_control(self) -> Self;
     fn show_unstable_flag(self) -> Self;
@@ -141,7 +148,6 @@ impl WithIonCliArgument for ClapCommand {
     fn with_input(self) -> Self {
         self.arg(
             Arg::new("input")
-                .trailing_var_arg(true)
                 .action(ArgAction::Append)
                 .help("Input file"),
         )
@@ -167,6 +173,27 @@ impl WithIonCliArgument for ClapCommand {
         )
     }
 
+    fn with_color(self) -> Self {
+        // This might be a better pattern: https://jwodder.github.io/kbits/posts/clap-bool-negate/
+        // Alternatively, we could use a --color <always|auto|never> defaulting to <auto>
+        self.arg(
+            Arg::new("color")
+                .long("color")
+                .short('C')
+                .action(ArgAction::SetTrue)
+                .help("colorize Ion output")
+                .conflicts_with("monochrome"),
+        )
+        .arg(
+            Arg::new("monochrome") // 'monochrome' copied from `jq`
+                .long("monochrome")
+                .short('M')
+                .action(ArgAction::SetTrue)
+                .help("disable colored output")
+                .conflicts_with("color"),
+        )
+    }
+
     fn with_ion_version(self) -> Self {
         // TODO When this arg/feature becomes stable:
         //    Remove: show_unstable_flag()
@@ -176,9 +203,7 @@ impl WithIonCliArgument for ClapCommand {
             .arg(
                 Arg::new(ION_VERSION_ARG_ID)
                     .long("ion-version")
-                    // TODO: Should we find a different short version so that 'v' can be reserved
-                    //       for 'verbose' in future use?
-                    .short('v')
+                    .short('i')
                     .help("UNSTABLE! Output Ion version")
                     .value_parser(["1.0", "1.1"])
                     .default_value("1.0")
@@ -188,9 +213,7 @@ impl WithIonCliArgument for ClapCommand {
     }
 
     fn with_decompression_control(self) -> Self {
-        let accepts_input = self
-            .get_arguments()
-            .any(|flag| dbg!(dbg!(flag.get_id()) == "input"));
+        let accepts_input = self.get_arguments().any(|flag| flag.get_id() == "input");
         self.arg(
             Arg::new("no-auto-decompress")
                 .long("no-auto-decompress")
@@ -211,11 +234,78 @@ impl WithIonCliArgument for ClapCommand {
 /// Offers convenience methods for working with input and output streams.
 pub struct CommandIo<'a> {
     args: &'a ArgMatches,
+    format: Format,
+    encoding: IonEncoding,
+    color: ColorChoice,
 }
 
-impl<'a> CommandIo<'a> {
-    fn new(args: &ArgMatches) -> CommandIo {
-        CommandIo { args }
+impl CommandIo<'_> {
+    fn new(args: &ArgMatches) -> Result<CommandIo> {
+        // --format pretty|text|lines|binary
+        let format = args
+            .try_get_one("format")
+            .ok()
+            .flatten()
+            .map(String::as_str);
+
+        // --ion_version 1.0|1.1
+        let ion_version = args
+            .try_get_one(ION_VERSION_ARG_ID)
+            .ok()
+            .flatten()
+            .map(String::as_str);
+
+        // `clap` validates the specified format/version and provides a default, unless CommandIO is
+        // being used by a command which doesn't care about Ion output version/format
+        let format = format.unwrap_or("pretty");
+        let ion_version = ion_version.unwrap_or("1.0");
+
+        let format = match format {
+            "pretty" => Format::Text(TextFormat::Pretty),
+            "text" => Format::Text(TextFormat::Compact),
+            "lines" => Format::Text(TextFormat::Lines),
+            "binary" => Format::Binary,
+            unrecognized => bail!("unsupported format '{unrecognized}'"),
+        };
+
+        let encoding = match (ion_version, format) {
+            ("1.0", Format::Text(_)) => IonEncoding::Text_1_0,
+            ("1.0", Format::Binary) => IonEncoding::Binary_1_0,
+            ("1.1", Format::Text(_)) => IonEncoding::Text_1_1,
+            ("1.1", Format::Binary) => IonEncoding::Binary_1_1,
+            (unrecognized, _) => bail!("unrecognized Ion version '{unrecognized}'"),
+        };
+
+        let color = args
+            .try_get_one::<bool>("color")
+            .ok()
+            .flatten()
+            .unwrap_or(&false);
+        let monochrome = args
+            .try_get_one::<bool>("monochrome")
+            .ok()
+            .flatten()
+            .unwrap_or(&false);
+
+        // clap::ColorChoice maps better onto our options here, but we will re-use this color choice
+        // when we instantiate TermColor's StandardStream::stdout
+        let color = if format == Binary {
+            ColorChoice::Never
+        } else if *color {
+            ColorChoice::Always
+        } else if !std::io::stdout().is_terminal() || *monochrome {
+            // We disable color if stdout is not a terminal or if explicitly disabled by the user
+            ColorChoice::Never
+        } else {
+            ColorChoice::Auto
+        };
+
+        Ok(CommandIo {
+            args,
+            format,
+            encoding,
+            color,
+        })
     }
 
     /// Returns `true` if the user has not explicitly disabled auto decompression.
@@ -254,13 +344,14 @@ impl<'a> CommandIo<'a> {
         &mut self,
         mut f: impl FnMut(&mut CommandOutput, CommandInput) -> Result<()>,
     ) -> Result<()> {
-        // These types are provided by the `termcolor` crate. They wrap the normal `io::Stdout` and
-        // `io::StdOutLock` types, making it possible to write colorful text to the output stream when
-        // it's a TTY that understands formatting escape codes. These variables are declared here so
-        // the lifetime will extend through the remainder of the function. Unlike `io::StdoutLock`,
-        // the `StandardStreamLock` does not have a static lifetime.
+        let spec = CommandOutputSpec {
+            format: self.format,
+            encoding: self.encoding,
+        };
+
         let stdout: StandardStream;
         let stdout_lock: StandardStreamLock;
+
         let mut output = if let Some(output_file) = self.args.get_one::<String>("output") {
             // If the user has specified an output file, use it.
             let file = File::create(output_file).with_context(|| {
@@ -269,13 +360,25 @@ impl<'a> CommandIo<'a> {
                     output_file
                 )
             })?;
-            CommandOutput::File(FileWriter::new(file))
+            CommandOutput::File(FileWriter::new(file), spec)
         } else {
-            // Otherwise, write to STDOUT.
-            stdout = StandardStream::stdout(ColorChoice::Always);
+            // These types are provided by the `termcolor` crate. They wrap the normal `io::Stdout` and
+            // `io::StdOutLock` types, making it possible to write colorful text to the output stream when
+            // it's a TTY that understands formatting escape codes. These variables are declared here so
+            // the lifetime will extend through the remainder of the function. Unlike `io::StdoutLock`,
+            // the `StandardStreamLock` does not have a static lifetime.
+            stdout = StandardStream::stdout(self.color);
             stdout_lock = stdout.lock();
-            CommandOutput::StdOut(stdout_lock)
+
+            let stdout_tty = std::io::stdout().is_terminal();
+
+            match self.color {
+                ColorChoice::Never => CommandOutput::StdOut(stdout_lock, spec),
+                ColorChoice::Auto if !stdout_tty => CommandOutput::StdOut(stdout_lock, spec),
+                _ => CommandOutput::HighlightedOut(HighlightedStreamWriter::new(stdout_lock), spec),
+            }
         };
+
         if let Some(input_file_names) = self.args.get_many::<String>("input") {
             // Input files were specified, run the converter on each of them in turn
             for input_file_name in input_file_names {
@@ -291,6 +394,11 @@ impl<'a> CommandIo<'a> {
     }
 
     fn write_output(&self, mut f: impl FnMut(&mut CommandOutput) -> Result<()>) -> Result<()> {
+        let spec = CommandOutputSpec {
+            format: self.format,
+            encoding: self.encoding,
+        };
+
         // These types are provided by the `termcolor` crate. They wrap the normal `io::Stdout` and
         // `io::StdOutLock` types, making it possible to write colorful text to the output stream when
         // it's a TTY that understands formatting escape codes. These variables are declared here so
@@ -306,12 +414,12 @@ impl<'a> CommandIo<'a> {
                     output_file
                 )
             })?;
-            CommandOutput::File(FileWriter::new(file))
+            CommandOutput::File(FileWriter::new(file), spec)
         } else {
             // Otherwise, write to STDOUT.
-            stdout = StandardStream::stdout(ColorChoice::Always);
+            stdout = StandardStream::stdout(self.color);
             stdout_lock = stdout.lock();
-            CommandOutput::StdOut(stdout_lock)
+            CommandOutput::StdOut(stdout_lock, spec)
         };
         f(&mut output)
     }
